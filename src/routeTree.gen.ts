@@ -13,6 +13,8 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiAnalyzeRouteImport } from './routes/api/analyze'
 import { Route as ApiFetchSourceRouteImport } from './routes/api/fetch-source'
 import { Route as ApiTutorRouteImport } from './routes/api/tutor'
+import { Route as SessionSessionIdRouteImport } from './routes/session.$sessionId'
+import { Route as SourceSourceIdRouteImport } from './routes/source.$sourceId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -34,18 +36,32 @@ const ApiTutorRoute = ApiTutorRouteImport.update({
   path: '/api/tutor',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SessionSessionIdRoute = SessionSessionIdRouteImport.update({
+  id: '/session/$sessionId',
+  path: '/session/$sessionId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SourceSourceIdRoute = SourceSourceIdRouteImport.update({
+  id: '/source/$sourceId',
+  path: '/source/$sourceId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/analyze': typeof ApiAnalyzeRoute
   '/api/fetch-source': typeof ApiFetchSourceRoute
   '/api/tutor': typeof ApiTutorRoute
+  '/session/$sessionId': typeof SessionSessionIdRoute
+  '/source/$sourceId': typeof SourceSourceIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/analyze': typeof ApiAnalyzeRoute
   '/api/fetch-source': typeof ApiFetchSourceRoute
   '/api/tutor': typeof ApiTutorRoute
+  '/session/$sessionId': typeof SessionSessionIdRoute
+  '/source/$sourceId': typeof SourceSourceIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -53,13 +69,34 @@ export interface FileRoutesById {
   '/api/analyze': typeof ApiAnalyzeRoute
   '/api/fetch-source': typeof ApiFetchSourceRoute
   '/api/tutor': typeof ApiTutorRoute
+  '/session/$sessionId': typeof SessionSessionIdRoute
+  '/source/$sourceId': typeof SourceSourceIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/analyze' | '/api/fetch-source' | '/api/tutor'
+  fullPaths:
+    | '/'
+    | '/api/analyze'
+    | '/api/fetch-source'
+    | '/api/tutor'
+    | '/session/$sessionId'
+    | '/source/$sourceId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/analyze' | '/api/fetch-source' | '/api/tutor'
-  id: '__root__' | '/' | '/api/analyze' | '/api/fetch-source' | '/api/tutor'
+  to:
+    | '/'
+    | '/api/analyze'
+    | '/api/fetch-source'
+    | '/api/tutor'
+    | '/session/$sessionId'
+    | '/source/$sourceId'
+  id:
+    | '__root__'
+    | '/'
+    | '/api/analyze'
+    | '/api/fetch-source'
+    | '/api/tutor'
+    | '/session/$sessionId'
+    | '/source/$sourceId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -67,6 +104,8 @@ export interface RootRouteChildren {
   ApiAnalyzeRoute: typeof ApiAnalyzeRoute
   ApiFetchSourceRoute: typeof ApiFetchSourceRoute
   ApiTutorRoute: typeof ApiTutorRoute
+  SessionSessionIdRoute: typeof SessionSessionIdRoute
+  SourceSourceIdRoute: typeof SourceSourceIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -99,6 +138,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiTutorRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/session/$sessionId': {
+      id: '/session/$sessionId'
+      path: '/session/$sessionId'
+      fullPath: '/session/$sessionId'
+      preLoaderRoute: typeof SessionSessionIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/source/$sourceId': {
+      id: '/source/$sourceId'
+      path: '/source/$sourceId'
+      fullPath: '/source/$sourceId'
+      preLoaderRoute: typeof SourceSourceIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -107,6 +160,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAnalyzeRoute: ApiAnalyzeRoute,
   ApiFetchSourceRoute: ApiFetchSourceRoute,
   ApiTutorRoute: ApiTutorRoute,
+  SessionSessionIdRoute: SessionSessionIdRoute,
+  SourceSourceIdRoute: SourceSourceIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
