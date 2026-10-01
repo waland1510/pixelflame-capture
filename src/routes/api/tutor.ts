@@ -71,7 +71,13 @@ export const Route = createFileRoute("/api/tutor")({
             },
           });
           return withLovableAiGatewayRunIdHeader(
-            result.toUIMessageStreamResponse({ originalMessages: messages }),
+            result.toUIMessageStreamResponse({
+              originalMessages: messages,
+              onError: (error) => {
+                console.error("[api/tutor] Response stream failed:", error);
+                return "The tutor couldn't generate a response. Check the server logs for details and try again.";
+              },
+            }),
             runIdFetch,
           );
         } catch (e) {
