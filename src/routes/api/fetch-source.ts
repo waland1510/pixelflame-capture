@@ -28,11 +28,12 @@ async function youtubeTranscript(id: string) {
   );
   const m = page.match(/"captionTracks":(\[.*?\])/);
   if (!m) throw new Error("This video has no captions we can read. Paste the transcript instead.");
-  const tracks = JSON.parse(m[1]) as { baseUrl: string; kind?: string }[];
+  const tracks = JSON.parse(m[1] ?? "[]") as { baseUrl: string; kind?: string }[];
   const track = tracks.find((t) => t.kind !== "asr") ?? tracks[0];
+  if (!track) throw new Error("This video has no captions we can read. Paste the transcript instead.");
   const xml = await fetch(track.baseUrl, { headers: { "User-Agent": UA } }).then((r) => r.text());
   const text = [...xml.matchAll(/<text[^>]*>([\s\S]*?)<\/text>/g)]
-    .map((x) => decode(decode(x[1])).replace(/<[^>]+>/g, ""))
+    .map((x) => decode(decode(x[1] ?? "")).replace(/<[^>]+>/g, ""))
     .join(" ");
   if (!text.trim()) throw new Error("Couldn't read this video's captions. Paste the transcript instead.");
   return { title, text };
