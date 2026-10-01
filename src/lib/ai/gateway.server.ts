@@ -4,7 +4,7 @@ import { createLovableAiGatewayRunIdFetch, getLovableAiGatewayRunId } from "./ru
 export const MODEL = "openai/gpt-6-astra";
 
 export function makeGateway(request: Request) {
-  const apiKey = process.env.LOVABLE_API_KEY;
+  const apiKey = process.env["LOVABLE_API_KEY"];
   if (!apiKey) throw new Error("AI is not configured (missing key).");
   const runIdFetch = createLovableAiGatewayRunIdFetch(getLovableAiGatewayRunId(request));
   const provider = createOpenAI({
