@@ -49,11 +49,20 @@ function SessionPage() {
 const STAGES = ["full_context", "partial_context", "cloze", "prompt", "recall", "free_production", "transfer"];
 
 function deriveState(messages: UIMessage[], base: LearnerState) {
-  let s: LearnerState = { ...base, items: {} };
+  // Older sessions (or an incomplete tool call) can have a missing stage.
+  // Keep the progress panel renderable while replaying their evaluations.
+  let s: LearnerState = {
+    ...base,
+    items: {},
+    current_scene: base?.current_scene ?? "",
+    stage: base?.stage || "full_context",
+    note: base?.note ?? "",
+  };
   for (const m of messages)
     for (const p of m.parts)
       if (p.type === "tool-record_evaluation" && "input" in p && p.input)
         s = applyEvaluation(s, p.input as Parameters<typeof applyEvaluation>[1]);
+  if (!s.stage) s.stage = "full_context";
   return s;
 }
 
@@ -177,7 +186,7 @@ function Tutor({ session, source }: { session: Session; source: Source }) {
               <span key={s} title={s.replace("_", " ")} className={`h-1.5 flex-1 rounded-full ${i <= stageIdx ? "bg-accent" : "bg-muted"}`} />
             ))}
           </div>
-          <p className="mt-2 text-sm capitalize">{state.stage.replace("_", " ")}</p>
+          <p className="mt-2 text-sm capitalize">{(state.stage || "full_context").replace("_", " ")}</p>
           {state.current_scene && <p className="mt-1 text-sm text-muted-foreground">Scene: {state.current_scene}</p>}
         </div>
         <div className="rounded-2xl border bg-card p-5 shadow-paper">
@@ -227,7 +236,7 @@ function EvalChips({ input }: { input: { items: { term: string; correct: boolean
 }
 
 function Prose({ text }: { text: string }) {
-  const html = text
+  const html = (typeof text === "string" ? text : "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/\*\*(.+?)\*\*/g, '<strong class="text-accent">$1</strong>')
