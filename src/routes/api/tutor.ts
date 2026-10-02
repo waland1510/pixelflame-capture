@@ -75,7 +75,11 @@ export const Route = createFileRoute("/api/tutor")({
               originalMessages: messages,
               onError: (error) => {
                 console.error("[api/tutor] Response stream failed:", error);
-                return "The tutor couldn't generate a response. Check the server logs for details and try again.";
+                const status = (error as { statusCode?: number })?.statusCode;
+                if (status === 402) return "AI credits are used up. Add credits in your workspace to keep learning.";
+                if (status === 429) return "Too many requests right now — wait a moment and try again.";
+                if (status === 403) return "AI access is blocked for this workspace right now.";
+                return "The tutor couldn't generate a response. Please try again.";
               },
             }),
             runIdFetch,
