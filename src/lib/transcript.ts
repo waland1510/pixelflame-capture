@@ -40,6 +40,7 @@ export function parseTranscript(raw: string): { text: string; cues: Cue[] } {
       cues[cues.length - 1]!.text += ` ${trimmed}`;
     }
   }
-  if (cues.length < 3) return { text: raw.trim(), cues: [] };
+  const inOrder = cues.every((c, i) => i === 0 || c.start >= cues[i - 1]!.start);
+  if (cues.length < 3 || !inOrder) return { text: raw.trim(), cues: [] };
   return { text: cues.map((c) => c.text).join(" "), cues };
 }

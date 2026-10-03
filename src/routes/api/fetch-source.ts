@@ -11,7 +11,58 @@ function decode(s: string) {
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
+    .replace(/&#(\d+);/g, (_, n: string) => codePoint(Number(n)))
+    .replace(/&#x([\da-f]+);/gi, (_, n: string) => codePoint(parseInt(n, 16)));
+}
+
+const codePoint = (n: number) => (n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : "");
+
+const TIMEOUT_MS = 15000;
+
+function isPrivateHost(hostname: string) {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "localhost" || /\.(localhost|local|internal)$/.test(host)) return true;
+  if (host.includes(":"))
+    return (
+      host === "::" ||
+      host === "::1" ||
+      /^(fc|fd|fe8|fe9|fea|feb)/.test(host) ||
+      host.startsWith("::ffff:")
+    );
+  const ip = host
+    .match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/)
+    ?.slice(1)
+    .map(Number);
+  if (!ip) return false;
+  const [a, b] = ip as [number, number];
+  return (
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 100 && b >= 64 && b <= 127)
+  );
+}
+
+/** Fetches a user-supplied URL, refusing private addresses on every redirect hop. */
+async function fetchPublic(url: string, init: RequestInit = {}) {
+  let target = new URL(url);
+  for (let hop = 0; hop < 5; hop++) {
+    if (!/^https?:$/.test(target.protocol)) throw new Error("Only web links are supported.");
+    if (isPrivateHost(target.hostname))
+      throw new Error("That address isn't reachable from our server.");
+    const r = await fetch(target, {
+      ...init,
+      redirect: "manual",
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    const location = r.status >= 300 && r.status < 400 ? r.headers.get("location") : null;
+    if (!location) return r;
+    target = new URL(location, target);
+  }
+  throw new Error("The page redirected too many times.");
 }
 
 type PlayerClient = { userAgent: string; context: Record<string, unknown> };
@@ -94,6 +145,7 @@ async function youtubeTranscript(id: string) {
       method: "POST",
       headers: { "Content-Type": "application/json", "User-Agent": client.userAgent },
       body: JSON.stringify({ context: client.context, videoId: id }),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
     })
       .then((r) => r.json())
       .catch(() => undefined)) as PlayerResponse | undefined;
@@ -121,7 +173,10 @@ async function youtubeTranscript(id: string) {
   const track = pickTrack(player.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? []);
   if (!track)
     throw new Error("This video has no captions we can read. Paste the transcript instead.");
-  const xml = await fetch(track.baseUrl, { headers: { "User-Agent": UA } }).then((r) => r.text());
+  const xml = await fetch(track.baseUrl, {
+    headers: { "User-Agent": UA },
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  }).then((r) => r.text());
   const cues = parseCues(xml);
   const text = cues.map((c) => c.text).join(" ");
   if (!text.trim())
@@ -130,7 +185,7 @@ async function youtubeTranscript(id: string) {
 }
 
 async function webPage(url: string) {
-  const html = await fetch(url, { headers: { "User-Agent": UA } }).then((r) => {
+  const html = await fetchPublic(url, { headers: { "User-Agent": UA } }).then((r) => {
     if (!r.ok) throw new Error(`The page returned an error (${r.status}).`);
     return r.text();
   });

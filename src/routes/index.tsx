@@ -65,7 +65,9 @@ function Index() {
   async function create() {
     setError("");
     try {
-      let content = parseTranscript(text).text;
+      const pasted = parseTranscript(text);
+      // Only a transcript copied from the start of a video counts; "9:00 Breakfast" or "3:16 For God…" is plain text.
+      let content = pasted.cues.length && pasted.cues[0]!.start < 60 ? pasted.text : text.trim();
       let kind = "Text";
       let video: Video | undefined;
       if (tab === "link" && askTranscript && transcript.trim() && youtubeId(url)) {

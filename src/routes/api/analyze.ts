@@ -7,6 +7,7 @@ import {
   logUsage,
   makeGateway,
 } from "@/lib/ai/gateway.server";
+import type { Graph, Scene } from "@/lib/store";
 
 const PROMPT = `You are the CONTENT ARCHITECT of an adaptive language-learning app.
 Convert the SOURCE into a structured learning graph. Identify its natural structure: scenes, sequences, stories, cause/effect, categories, recurring patterns, useful vocabulary and phrases. Preserve the source's natural wording. Never invent facts.
@@ -31,6 +32,47 @@ Return ONLY valid JSON (no markdown fences) with this shape:
 }
 Produce 2-8 scenes, in the order they occur. Keep it faithful to the source: titles, contexts, terms and phrases stay in the source's language; only "meaning", "topic" and "summary" are in English. Transcripts may lack punctuation and capitals; that's normal, don't translate them.`;
 
+const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+const record = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
+
+function normaliseGraph(value: unknown): Graph {
+  const g = record(value);
+  const scenes: Scene[] = list(g["scenes"]).flatMap((raw) => {
+    const sc = record(raw);
+    const title = str(sc["title"]);
+    if (!title) return [];
+    const sequence = list(sc["sequence"]).flatMap((rawItem) => {
+      const it = record(rawItem);
+      const term = str(it["term"]);
+      return term ? [{ term, meaning: str(it["meaning"]), emoji: str(it["emoji"]) }] : [];
+    });
+    return [
+      {
+        title,
+        context: str(sc["context"]),
+        ...(str(sc["start_quote"]) ? { start_quote: str(sc["start_quote"]) } : {}),
+        sequence,
+        phrases: list(sc["phrases"]).map(str).filter(Boolean),
+      },
+    ];
+  });
+  if (!scenes.length) throw new Error("The AI didn't return any scenes. Try again.");
+  return {
+    title: str(g["title"]) || scenes[0]!.title,
+    topic: str(g["topic"]),
+    language: str(g["language"]),
+    level: str(g["level"]),
+    summary: str(g["summary"]),
+    scenes,
+    relationships: list(g["relationships"]).flatMap((raw) => {
+      const r = record(raw);
+      const parent = str(r["parent"]);
+      return parent ? [{ parent, children: list(r["children"]).map(str).filter(Boolean) }] : [];
+    }),
+  };
+}
+
 export const Route = createFileRoute("/api/analyze")({
   server: {
     handlers: {
@@ -53,14 +95,24 @@ export const Route = createFileRoute("/api/analyze")({
             providerOptions: withoutThinking,
           });
           const encoder = new TextEncoder();
+          let keepAlive: ReturnType<typeof setInterval> | undefined;
           const body = new ReadableStream<Uint8Array>({
             async start(controller) {
+              const send = (chunk: string) => {
+                try {
+                  controller.enqueue(encoder.encode(chunk));
+                } catch {
+                  clearInterval(keepAlive);
+                }
+              };
               // Browsers drop requests that receive no bytes for ~60s; leading whitespace keeps the JSON valid.
-              const keepAlive = setInterval(() => controller.enqueue(encoder.encode(" ")), 5000);
+              keepAlive = setInterval(() => send(" "), 5000);
               let payload: unknown;
               try {
                 const out = await result.text;
-                const graph = JSON.parse(out.slice(out.indexOf("{"), out.lastIndexOf("}") + 1));
+                const graph = normaliseGraph(
+                  JSON.parse(out.slice(out.indexOf("{"), out.lastIndexOf("}") + 1)),
+                );
                 payload = { graph };
               } catch (e) {
                 const cause = streamError ?? e;
@@ -69,8 +121,15 @@ export const Route = createFileRoute("/api/analyze")({
               } finally {
                 clearInterval(keepAlive);
               }
-              controller.enqueue(encoder.encode(JSON.stringify(payload)));
-              controller.close();
+              send(JSON.stringify(payload));
+              try {
+                controller.close();
+              } catch {
+                // The client already disconnected.
+              }
+            },
+            cancel() {
+              clearInterval(keepAlive);
             },
           });
           return new Response(body, { headers: { "Content-Type": "application/json" } });

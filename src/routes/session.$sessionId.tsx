@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import {
   applyEvaluation,
   emptyState,
+  getProgress,
   getSession,
   getSource,
   recordPractice,
@@ -66,15 +67,19 @@ function SessionPage() {
 
 const STAGES = ["full_context", "partial_context", "cloze", "prompt", "recall", "free_production", "transfer"];
 
-function deriveState(messages: UIMessage[], start: LearnerState) {
-  let s: LearnerState = {
-    ...start,
-    stage: start.stage || "full_context",
-  };
-  for (const m of messages) {
+/** Evaluations keyed by the user answer they grade, so a regenerated reply can't count an answer twice. */
+function answerEvaluations(messages: UIMessage[]) {
+  return messages.flatMap((m, i) => {
     const evaluation = evaluationOf(m);
-    if (evaluation) s = applyEvaluation(s, evaluation as Parameters<typeof applyEvaluation>[1]);
-  }
+    if (!evaluation) return [];
+    const answer = messages[i - 1];
+    return [{ answer: answer?.role === "user" ? answer.id : m.id, evaluation }];
+  });
+}
+
+function foldEvaluations(base: LearnerState, evaluations: Evaluation[]) {
+  let s: LearnerState = { ...base, stage: base.stage || "full_context" };
+  for (const evaluation of evaluations) s = applyEvaluation(s, evaluation);
   // An incomplete tool call can leave the stage empty; keep the progress panel renderable.
   if (!s.stage) s.stage = "full_context";
   return s;
@@ -82,6 +87,15 @@ function deriveState(messages: UIMessage[], start: LearnerState) {
 
 function Tutor({ session: snapshot, source }: { session: Session; source: Source }) {
   const [session] = useState(() => getSession(snapshot.id) ?? snapshot);
+  const [applied] = useState(
+    () =>
+      new Set(session.appliedAnswers ?? answerEvaluations(session.messages).map((e) => e.answer)),
+  );
+  const [base, setBase] = useState(() =>
+    session.profileId
+      ? getProgress(session.profileId, session.sourceId)
+      : (session.startState ?? emptyState()),
+  );
   const stateRef = useRef<LearnerState>(session.state);
   const { messages, sendMessage, regenerate, status, error, stop } = useChat({
     id: session.id,
@@ -120,8 +134,16 @@ function Tutor({ session: snapshot, source }: { session: Session; source: Source
   const started = useRef(false);
   const busy = status === "submitted" || status === "streaming";
 
-  const startState = useMemo(() => session.startState ?? emptyState(), [session]);
-  const state = useMemo(() => deriveState(messages, startState), [messages, startState]);
+  const state = useMemo(
+    () =>
+      foldEvaluations(
+        base,
+        answerEvaluations(messages)
+          .filter((e) => !applied.has(e.answer))
+          .map((e) => e.evaluation),
+      ),
+    [messages, base, applied],
+  );
   stateRef.current = state;
 
   useEffect(() => {
@@ -136,7 +158,7 @@ function Tutor({ session: snapshot, source }: { session: Session; source: Source
         void regenerate();
         return;
       }
-      const resuming = Object.keys(startState.items).length > 0;
+      const resuming = Object.keys(base.items).length > 0;
       sendMessage({
         text:
           session.opener ??
@@ -144,7 +166,7 @@ function Tutor({ session: snapshot, source }: { session: Session; source: Source
       });
     }, 0);
     return () => clearTimeout(timer);
-  }, [session.id, session.opener, sendMessage, regenerate, startState]);
+  }, [session.id, session.opener, sendMessage, regenerate, base]);
 
   const latest = useRef({ messages, state });
   latest.current = { messages, state };
@@ -154,14 +176,34 @@ function Tutor({ session: snapshot, source }: { session: Session; source: Source
       if (!messages.length) return;
       const stored = getSession(session.id)?.messages ?? [];
       if (stored.length > messages.length) return;
+      const pending =
+        withProgress && session.profileId
+          ? answerEvaluations(messages).filter((e) => !applied.has(e.answer))
+          : [];
+      let saved = state;
+      if (pending.length && session.profileId) {
+        saved = foldEvaluations(
+          getProgress(session.profileId, session.sourceId),
+          pending.map((e) => e.evaluation),
+        );
+        saveProgress(session.profileId, session.sourceId, saved);
+        for (const e of pending) applied.add(e.answer);
+        setBase(saved);
+      }
       const unchanged =
+        !pending.length &&
         stored.length === messages.length &&
         JSON.stringify(stored.at(-1)) === JSON.stringify(messages.at(-1));
       if (unchanged) return;
-      saveSession({ ...session, messages, state, updatedAt: Date.now() });
-      if (withProgress && session.profileId) saveProgress(session.profileId, session.sourceId, state);
+      saveSession({
+        ...session,
+        messages,
+        state: saved,
+        appliedAnswers: [...applied],
+        updatedAt: Date.now(),
+      });
     },
-    [session],
+    [session, applied],
   );
 
   useEffect(() => {
@@ -217,11 +259,11 @@ function Tutor({ session: snapshot, source }: { session: Session; source: Source
     if (!replyText) return;
     spokenIds.current.add(reply.id);
     setTutorSpeaking(true);
-    speak(replyText, lang, () => {
+    speak(replyText, voiceLang, () => {
       setTutorSpeaking(false);
       if (talkRef.current) dictationRef.current.start("");
     });
-  }, [talkMode, status, messages, lang]);
+  }, [talkMode, status, messages, voiceLang]);
 
   useEffect(() => () => stopSpeaking(), []);
 
@@ -272,6 +314,11 @@ function Tutor({ session: snapshot, source }: { session: Session; source: Source
     }, 0);
     return () => clearTimeout(timer);
   }, [emptyReply, answeredId, regenerate]);
+  const stopReply = () => {
+    const answer = [...messages].reverse().find((m) => m.role === "user");
+    if (answer) retriedFor.current.add(answer.id);
+    void stop();
+  };
   const taggedScene = latestSceneTag(messages);
   const sceneIndex = findScene(source.graph.scenes, taggedScene || state.current_scene);
   const items = source.graph.scenes.flatMap((s) => s.sequence);
@@ -333,7 +380,7 @@ function Tutor({ session: snapshot, source }: { session: Session; source: Source
                   {!(busy && m.id === last?.id) && (
                     <MessageActions
                       text={m.parts.map((p) => (p.type === "text" ? p.text : "")).join("\n")}
-                      language={lang}
+                      language={voiceLang}
                     />
                   )}
                 </div>
@@ -457,7 +504,7 @@ function Tutor({ session: snapshot, source }: { session: Session; source: Source
                 </Button>
               )}
               {busy ? (
-                <Button size="sm" variant="secondary" onClick={stop}>Stop</Button>
+                <Button size="sm" variant="secondary" onClick={stopReply}>Stop</Button>
               ) : (
                 <Button size="sm" onClick={() => send(input)} disabled={!input.trim()}>Send</Button>
               )}
@@ -511,7 +558,7 @@ function Tutor({ session: snapshot, source }: { session: Session; source: Source
                       <button
                         type="button"
                         title={`Listen: ${it.term} (${it.meaning})`}
-                        onClick={() => speak(it.term, lang)}
+                        onClick={() => speak(it.term, voiceLang)}
                         className="text-left hover:text-accent"
                       >
                         {it.emoji} {it.term} <span className="text-xs text-muted-foreground">🔊</span>
@@ -559,13 +606,15 @@ function evaluationOf(m: UIMessage): Evaluation | undefined {
   for (let i = m.parts.length - 1; i >= 0; i--) {
     const p = m.parts[i]!;
     if (p.type !== "tool-record_evaluation" || !("input" in p) || !p.input) continue;
-    if ("state" in p && p.state === "output-error") continue;
+    if ("state" in p && (p.state === "output-error" || p.state === "input-streaming")) continue;
     const raw = p.input as Record<string, unknown>;
     const items = parseMaybeJson(raw["items"]);
     const correction = parseMaybeJson(raw["correction"]) as Correction | undefined;
     return {
       ...(raw as Omit<Evaluation, "items" | "correction">),
-      items: Array.isArray(items) ? (items as Evaluation["items"]) : [],
+      items: Array.isArray(items)
+        ? (items as Evaluation["items"]).filter((it) => typeof it?.term === "string")
+        : [],
       ...(correction && typeof correction === "object" ? { correction } : {}),
     };
   }

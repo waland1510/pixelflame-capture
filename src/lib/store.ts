@@ -52,6 +52,7 @@ export type Session = {
   messages: UIMessage[];
   state: LearnerState;
   startState?: LearnerState;
+  appliedAnswers?: string[];
   opener?: string;
 };
 export type Profile = { id: string; name: string; createdAt: number };
@@ -252,6 +253,7 @@ export function createSession(profileId: string, sourceId: string, opener?: stri
     messages: [],
     state: progress,
     startState: progress,
+    appliedAnswers: [],
     ...(opener ? { opener } : {}),
   };
   saveSession(s);
@@ -267,9 +269,14 @@ export const reviewOpener = (items: SeqItem[]) =>
     .join(", ")}.`;
 
 const NO_ACTIVITY: Record<string, string[]> = {};
-const dayKey = (t: number) => {
+const dayKey = (t: number | Date) => {
   const d = new Date(t);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+const daysBefore = (t: number, n: number) => {
+  const d = new Date(t);
+  d.setDate(d.getDate() - n);
+  return d;
 };
 
 export function recordPractice(profileId: string, now = Date.now()) {
@@ -282,14 +289,14 @@ export function recordPractice(profileId: string, now = Date.now()) {
 
 export function practiceStats(profileId: string, now = Date.now()) {
   const days = new Set(read<Record<string, string[]>>("lw.activity", NO_ACTIVITY)[profileId] ?? []);
-  let cursor = days.has(dayKey(now)) ? now : now - DAY;
+  let offset = days.has(dayKey(now)) ? 0 : 1;
   let streak = 0;
-  while (days.has(dayKey(cursor))) {
+  while (days.has(dayKey(daysBefore(now, offset)))) {
     streak++;
-    cursor -= DAY;
+    offset++;
   }
   let thisWeek = 0;
-  for (let i = 0; i < 7; i++) if (days.has(dayKey(now - i * DAY))) thisWeek++;
+  for (let i = 0; i < 7; i++) if (days.has(dayKey(daysBefore(now, i)))) thisWeek++;
   return { streak, thisWeek, practisedToday: days.has(dayKey(now)) };
 }
 
@@ -307,7 +314,7 @@ type Eval = {
   note: string;
 };
 
-export function applyEvaluation(state: LearnerState, ev: Eval): LearnerState {
+export function applyEvaluation(state: LearnerState, ev: Eval, now = Date.now()): LearnerState {
   const items = { ...state.items };
   const clamp = (n: number) => Math.max(0, Math.min(1, n));
   for (const it of ev.items ?? []) {
@@ -326,9 +333,9 @@ export function applyEvaluation(state: LearnerState, ev: Eval): LearnerState {
         p.production_strength + (it.produced && it.correct ? 0.25 : it.correct ? 0.05 : -0.1),
       ),
       recent_errors: it.correct
-        ? p.recent_errors.slice(-2)
+        ? p.recent_errors.slice(1)
         : [...p.recent_errors, it.error_type].slice(-3),
-      last_seen: Date.now(),
+      last_seen: now,
       seen: p.seen + 1,
     };
   }
