@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { streamText } from "ai";
+import { jsonSchema, Output, streamText } from "ai";
 import {
   errorMessage,
   errorResponse,
@@ -31,6 +31,53 @@ Return ONLY valid JSON (no markdown fences) with this shape:
   "relationships": [ { "parent": string, "children": [string] } ]
 }
 Produce 2-8 scenes, in the order they occur. Keep it faithful to the source: titles, contexts, terms and phrases stay in the source's language; only "meaning", "topic" and "summary" are in English. Transcripts may lack punctuation and capitals; that's normal, don't translate them.`;
+
+const string = { type: "string" } as const;
+const strings = { type: "array", items: string } as const;
+
+const graphOutput = Output.object({
+  name: "learning_graph",
+  schema: jsonSchema<unknown>({
+    type: "object",
+    properties: {
+      title: string,
+      topic: string,
+      language: string,
+      level: string,
+      summary: string,
+      scenes: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            title: string,
+            context: string,
+            start_quote: string,
+            sequence: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: { term: string, meaning: string, emoji: string },
+                required: ["term", "meaning", "emoji"],
+              },
+            },
+            phrases: strings,
+          },
+          required: ["title", "context", "start_quote", "sequence", "phrases"],
+        },
+      },
+      relationships: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: { parent: string, children: strings },
+          required: ["parent", "children"],
+        },
+      },
+    },
+    required: ["title", "topic", "language", "level", "summary", "scenes", "relationships"],
+  }),
+});
 
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
 const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
@@ -87,6 +134,8 @@ export const Route = createFileRoute("/api/analyze")({
             model,
             system: PROMPT,
             prompt: `SOURCE:\n${text.slice(0, 60000)}`,
+            // Constrains decoding to valid JSON; Qwen otherwise leaves quotes inside strings unescaped.
+            output: graphOutput,
             abortSignal: request.signal,
             onFinish: ({ totalUsage }) => logUsage("api/analyze", totalUsage),
             onError: ({ error }) => {
@@ -109,10 +158,7 @@ export const Route = createFileRoute("/api/analyze")({
               keepAlive = setInterval(() => send(" "), 5000);
               let payload: unknown;
               try {
-                const out = await result.text;
-                const graph = normaliseGraph(
-                  JSON.parse(out.slice(out.indexOf("{"), out.lastIndexOf("}") + 1)),
-                );
+                const graph = normaliseGraph(await result.output);
                 payload = { graph };
               } catch (e) {
                 const cause = streamError ?? e;

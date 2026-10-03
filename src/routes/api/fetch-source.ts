@@ -105,15 +105,38 @@ type CaptionTrack = { baseUrl: string; languageCode: string; kind?: string };
 type PlayerResponse = {
   playabilityStatus?: { status?: string; reason?: string };
   videoDetails?: { title?: string };
-  captions?: { playerCaptionsTracklistRenderer?: { captionTracks?: CaptionTrack[] } };
+  captions?: {
+    playerCaptionsTracklistRenderer?: {
+      captionTracks?: CaptionTrack[];
+      defaultTranslationSourceTrackIndices?: number[];
+    };
+  };
+  streamingData?: {
+    adaptiveFormats?: { audioTrack?: { id?: string; audioIsDefault?: boolean } }[];
+  };
 };
 type Cue = { start: number; text: string };
 
-function pickTrack(tracks: CaptionTrack[]) {
-  const spoken = tracks.find((t) => t.kind === "asr")?.languageCode.split("-")[0];
+const baseLanguage = (code: string | undefined) => code?.split(/[-.]/)[0];
+
+// Auto-dubbed videos carry an auto-generated track per dubbed language; use the original audio's.
+function pickTrack(player: PlayerResponse) {
+  const list = player.captions?.playerCaptionsTracklistRenderer;
+  const tracks = list?.captionTracks ?? [];
+  const originalAudio = player.streamingData?.adaptiveFormats?.find(
+    (f) => f.audioTrack?.audioIsDefault,
+  )?.audioTrack?.id;
+  const sourceTrack = tracks[list?.defaultTranslationSourceTrackIndices?.[0] ?? -1];
+  const spoken =
+    baseLanguage(originalAudio) ??
+    baseLanguage(sourceTrack?.languageCode) ??
+    baseLanguage(tracks.find((t) => t.kind === "asr")?.languageCode);
+  const inSpoken = (t: CaptionTrack) => baseLanguage(t.languageCode) === spoken;
   const manual = tracks.filter((t) => t.kind !== "asr");
   return (
-    (spoken && manual.find((t) => t.languageCode.split("-")[0] === spoken)) ||
+    manual.find(inSpoken) ||
+    tracks.find((t) => t.kind === "asr" && inSpoken(t)) ||
+    sourceTrack ||
     tracks.find((t) => t.kind === "asr") ||
     manual[0]
   );
@@ -170,7 +193,7 @@ async function youtubeTranscript(id: string) {
         : lastReason,
     );
   const title = player.videoDetails?.title ?? "YouTube video";
-  const track = pickTrack(player.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? []);
+  const track = pickTrack(player);
   if (!track)
     throw new Error("This video has no captions we can read. Paste the transcript instead.");
   const xml = await fetch(track.baseUrl, {

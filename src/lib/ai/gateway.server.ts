@@ -7,7 +7,13 @@ export function makeGateway() {
   const apiKey = process.env["AI_API_KEY"];
   if (!apiKey) throw new Error("AI is not configured (missing key).");
   const baseURL = process.env["AI_BASE_URL"] || DEFAULT_BASE_URL;
-  const provider = createOpenAICompatible({ name: "ai", baseURL, apiKey, includeUsage: true });
+  const provider = createOpenAICompatible({
+    name: "ai",
+    baseURL,
+    apiKey,
+    includeUsage: true,
+    supportsStructuredOutputs: true,
+  });
   // chat_template_kwargs is a vLLM extension (Spiria's Qwen models reason by default); other
   // OpenAI-compatible APIs such as Gemini reject the unknown field.
   const withoutThinking = baseURL.startsWith(DEFAULT_BASE_URL)
