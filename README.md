@@ -24,3 +24,14 @@ cd <repository-name>
 npm i
 npm run dev
 ```
+
+AI features use Spiria's internal AI server, an OpenAI-compatible LiteLLM gateway. See [Getting Started — AI Server for Developers](https://spiria.atlassian.net/wiki/spaces/SPIRAI/pages/406782786/Getting+Started+AI+Server+for+Developers). Create a `.env` file:
+
+```sh
+AI_API_KEY=<your LiteLLM key>
+# Optional overrides:
+# AI_BASE_URL=https://ai-litellm.spiria.com/v1
+# AI_MODEL=qwen3-27b
+```
+
+The gateway is reachable only from the Spiria office network or VPN.
