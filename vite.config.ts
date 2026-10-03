@@ -1,15 +1,26 @@
-// @lovable.dev/vite-tanstack-config already includes the following — do NOT add them manually
-// or the app will break with duplicate plugins:
-//   - TanStack devtools (dev-only, first), tanstackStart, viteReact, tailwindcss, tsConfigPaths,
-//     nitro (build-only using cloudflare as a default target), VITE_* env injection, @ path alias,
-//     React/TanStack dedupe, error logger plugins, and sandbox detection (port/host/strictPort).
-// You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
-import { defineConfig } from "@lovable.dev/vite-tanstack-config";
+import { defineConfig, loadEnv } from "vite";
+import { tanstackStart } from "@tanstack/react-start/plugin/vite";
+import viteReact from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
+import tsConfigPaths from "vite-tsconfig-paths";
+import { nitro } from "nitro/vite";
 
-export default defineConfig({
-  tanstackStart: {
-    // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
-    // nitro/vite builds from this
-    server: { entry: "server" },
-  },
+export default defineConfig(({ command, mode }) => {
+  // Server routes read AI_* from process.env; in dev this also picks up .env.[mode] (e.g. .env.spiria).
+  Object.assign(process.env, { ...loadEnv(mode, process.cwd(), ""), ...process.env });
+
+  return {
+    server: { host: "::", port: 8080 },
+    resolve: {
+      dedupe: ["react", "react-dom", "@tanstack/react-query", "@tanstack/query-core"],
+    },
+    plugins: [
+      tailwindcss(),
+      tsConfigPaths({ projects: ["./tsconfig.json"] }),
+      // src/server.ts wraps the bundled server entry with the SSR error page.
+      tanstackStart({ server: { entry: "server" } }),
+      command === "build" && nitro({ preset: process.env["VERCEL"] ? "vercel" : "node-server" }),
+      viteReact(),
+    ],
+  };
 });

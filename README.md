@@ -1,37 +1,61 @@
-# Pixel Perfect Project
+# Lernwerk
 
-Implement exactly the screenshot and nothing else
+Learn a language from anything you read or watch. Paste text, a YouTube link, an article or a PDF;
+Lernwerk maps its scenes and vocabulary, and an adaptive tutor guides you from reading it to
+speaking it.
 
-This project was built with [Lovable](https://lovable.dev).
-
-**Live app**: https://pixelflame-capture.lovable.app
-
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/88fc017d-306e-446f-be3b-3706a8ab6030).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
+Built with TanStack Start, React and the AI SDK. Learner data lives in the browser's localStorage.
 
 ## Development
 
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+Requires [Bun](https://bun.sh) and Node.js 22+.
 
 ```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
-npm run dev
+bun install
+cp .env.example .env   # then fill in a key
+bun run dev            # http://localhost:8080
 ```
 
-AI features use Spiria's internal AI server, an OpenAI-compatible LiteLLM gateway. See [Getting Started — AI Server for Developers](https://spiria.atlassian.net/wiki/spaces/SPIRAI/pages/406782786/Getting+Started+AI+Server+for+Developers). Create a `.env` file:
+## AI provider
+
+The server talks to any OpenAI-compatible API, configured with environment variables:
+
+| Variable      | Default                             |
+| ------------- | ----------------------------------- |
+| `AI_API_KEY`  | required                            |
+| `AI_BASE_URL` | `https://ai-litellm.spiria.com/v1`  |
+| `AI_MODEL`    | `qwen3-27b`                         |
+
+### Spiria AI server (local only)
+
+Spiria's LiteLLM gateway is reachable only from the Spiria office network or VPN, so it works for
+local development but not from Vercel. See
+[Getting Started — AI Server for Developers](https://spiria.atlassian.net/wiki/spaces/SPIRAI/pages/406782786/Getting+Started+AI+Server+for+Developers)
+for a key.
+
+To keep another provider in `.env` and switch to Spiria when needed, put the Spiria settings in
+`.env.spiria` and run `bun run dev:spiria`; values there override `.env`:
 
 ```sh
 AI_API_KEY=<your LiteLLM key>
-# Optional overrides:
-# AI_BASE_URL=https://ai-litellm.spiria.com/v1
-# AI_MODEL=qwen3-27b
+AI_BASE_URL=https://ai-litellm.spiria.com/v1
+AI_MODEL=qwen3-27b
 ```
 
-The gateway is reachable only from the Spiria office network or VPN.
+### Gemini (or another hosted provider)
+
+```sh
+AI_API_KEY=<your Gemini key>
+AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+AI_MODEL=gemini-3.5-flash-lite
+```
+
+## Deployment
+
+The app deploys to Vercel from GitHub: every push to `main` deploys to production, and other
+branches get preview deployments. Set `AI_API_KEY`, `AI_BASE_URL` and `AI_MODEL` in the Vercel
+project's environment variables; it must use a provider reachable from the internet, not the
+Spiria gateway.
+
+`bun run build` targets Vercel when it runs on Vercel and a plain Node server elsewhere;
+`bun run start` serves that local build with `.env` loaded.
