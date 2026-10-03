@@ -14,6 +14,7 @@ Convert the SOURCE into a structured learning graph. Identify its natural struct
 
 Return ONLY valid JSON (no markdown fences) with this shape:
 {
+  "kind": "content" | "grammar", // "grammar" when the source mainly explains a grammar rule (forms, endings, word order…), else "content"
   "title": string,              // short title in the target language
   "topic": string,              // one-line topic in the learner's native language (English unless obvious otherwise)
   "language": string,           // target language name, e.g. "German"
@@ -25,12 +26,21 @@ Return ONLY valid JSON (no markdown fences) with this shape:
       "context": string,        // a short passage (2-5 sentences) from the source, in the source's own language (never translated); you may fix capitalisation and punctuation
       "start_quote": string,    // the first 6-10 words of this scene copied exactly from the source, unchanged
       "sequence": [ { "term": string, "meaning": string, "emoji": string } ],  // ordered items as they occur, 3-10
-      "phrases": [string]       // 0-4 useful full phrases from the source
+      "phrases": [string],      // 0-4 useful full phrases from the source
+      "exercises": [ { "prompt": string, "answer": string } ]  // grammar only, else []
     }
   ],
   "relationships": [ { "parent": string, "children": [string] } ]
 }
-Produce 2-8 scenes, in the order they occur. Keep it faithful to the source: titles, contexts, terms and phrases stay in the source's language; only "meaning", "topic" and "summary" are in English. Transcripts may lack punctuation and capitals; that's normal, don't translate them.`;
+Produce 2-8 scenes, in the order they occur. Keep it faithful to the source: titles, contexts, terms and phrases stay in the source's language; only "meaning", "topic" and "summary" are in English. Transcripts may lack punctuation and capitals; that's normal, don't translate them.
+
+For a "grammar" source, each scene is one part of the rule, in the order the source teaches it (e.g. the regular pattern, then the exceptions, then how the form changes with articles):
+- "title": a short name for that part, e.g. "1–19: add -te".
+- "context": the rule for that part in 2-4 short English sentences, with the source's own target-language examples.
+- "start_quote": "".
+- "sequence": the forms the learner must master, e.g. { "term": "der dritte", "meaning": "the third (irregular)", "emoji": "3️⃣" }.
+- "phrases": the source's example sentences.
+- "exercises": 4-8 exercises that make the learner apply this part of the rule, easy to hard and varied: fill in the correct form ("Heute ist der ___ Mai. (3.)"), transform, translate a short sentence into the target language, answer a question with the form. Every exercise has exactly one correct answer; "prompt" is the task as the learner sees it (instruction in English, sentence in the target language); "answer" is the full expected answer. Use only words a learner at this level knows; new example sentences are allowed here.`;
 
 const string = { type: "string" } as const;
 const strings = { type: "array", items: string } as const;
@@ -40,6 +50,7 @@ const graphOutput = Output.object({
   schema: jsonSchema<unknown>({
     type: "object",
     properties: {
+      kind: { type: "string", enum: ["content", "grammar"] },
       title: string,
       topic: string,
       language: string,
@@ -62,8 +73,16 @@ const graphOutput = Output.object({
               },
             },
             phrases: strings,
+            exercises: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: { prompt: string, answer: string },
+                required: ["prompt", "answer"],
+              },
+            },
           },
-          required: ["title", "context", "start_quote", "sequence", "phrases"],
+          required: ["title", "context", "start_quote", "sequence", "phrases", "exercises"],
         },
       },
       relationships: {
@@ -75,7 +94,7 @@ const graphOutput = Output.object({
         },
       },
     },
-    required: ["title", "topic", "language", "level", "summary", "scenes", "relationships"],
+    required: ["kind", "title", "topic", "language", "level", "summary", "scenes", "relationships"],
   }),
 });
 
@@ -101,11 +120,18 @@ function normaliseGraph(value: unknown): Graph {
         ...(str(sc["start_quote"]) ? { start_quote: str(sc["start_quote"]) } : {}),
         sequence,
         phrases: list(sc["phrases"]).map(str).filter(Boolean),
+        exercises: list(sc["exercises"]).flatMap((rawExercise) => {
+          const ex = record(rawExercise);
+          const prompt = str(ex["prompt"]);
+          const answer = str(ex["answer"]);
+          return prompt && answer ? [{ prompt, answer }] : [];
+        }),
       },
     ];
   });
   if (!scenes.length) throw new Error("The AI didn't return any scenes. Try again.");
   return {
+    kind: g["kind"] === "grammar" ? "grammar" : "content",
     title: str(g["title"]) || scenes[0]!.title,
     topic: str(g["topic"]),
     language: str(g["language"]),

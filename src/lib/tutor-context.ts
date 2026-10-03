@@ -47,6 +47,7 @@ export function focusSceneIndex(
 /** The focus scene and the next one in full; the rest as titles and words only. */
 export function compactGraph(graph: Graph, focus: number) {
   return {
+    ...(graph.kind ? { kind: graph.kind } : {}),
     title: graph.title,
     language: graph.language,
     level: graph.level,

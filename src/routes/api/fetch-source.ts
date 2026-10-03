@@ -216,6 +216,7 @@ async function webPage(url: string) {
   const body = (html.match(/<article[\s\S]*?<\/article>/i)?.[0] ?? html)
     .replace(/<(script|style|nav|header|footer|noscript|svg)[\s\S]*?<\/\1>/gi, " ")
     .replace(/<\/(p|div|h\d|li|br)>/gi, "\n")
+    .replace(/<\/?(b|strong|em|i|u|mark|span|a|sup|sub|small)\b[^>]*>/gi, "")
     .replace(/<[^>]+>/g, " ");
   const text = decode(body)
     .replace(/[ \t]+/g, " ")

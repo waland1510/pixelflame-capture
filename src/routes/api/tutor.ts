@@ -74,6 +74,14 @@ EVERY TURN:
 - Then write the next activity. Keep it short (under ~120 words). Use markdown sparingly; use "___" for blanks. End with one clear prompt for the learner.
 - Begin with a one-line tag like "**Conversation · Scene: Augen**".`;
 
+const GRAMMAR = `GRAMMAR LESSON: this LEARNING_GRAPH teaches a grammar rule. Each scene is one part of the rule; its "context" states the rule, "sequence" lists the forms to master and "exercises" holds ready-made exercises with answers. For this lesson the rules below replace the conversation and cloze rules above.
+- When a part starts, explain its rule briefly (2-3 sentences with one example from the source), then give the first exercise in the same message. Show the explanation again only when the learner asks or keeps missing the same form.
+- Every turn is one exercise. Use the scene's exercises first, in order, without showing their answers; once they are used up, write new ones in the same style. Blanks are allowed in every turn; put the cue right after the blank, e.g. "Heute ist der ___ Mai. (3.)".
+- Vary the task and raise the difficulty as the learner succeeds: fill in the form → transform a sentence → translate a short sentence → answer a question using the form → a free sentence about their own life.
+- Grade the form strictly (ending, spelling, agreement); accept any other words that fit. After a wrong answer, give the smallest useful hint (point to the rule, then the ending, then the answer) and ask again before moving on.
+- Move to the next part once the learner gets several forms of this part right without hints.
+- record_evaluation "items" are the "sequence" terms the exercise tested. Tag messages "**Exercise · Scene: <the scene's exact title>**".`;
+
 // Shown to the model as-is so it fills every field.
 const evaluationSchema = z.object({
   items: z.array(
@@ -179,7 +187,7 @@ export const Route = createFileRoute("/api/tutor")({
           const trimmed = history.length < messages.length;
           const result = streamText({
             model,
-            system: `${SYSTEM}\n\nLEARNING_GRAPH (scenes other than the current and next one are listed by title and words only):\n${JSON.stringify(lessonForModel)}\n\nLEARNER_STATE:\n${JSON.stringify(compactState(learnerState))}${trimmed ? "\n\nOnly the session's first message and the most recent messages are included below; LEARNER_STATE summarises the learner's progress from the rest." : ""}`,
+            system: `${SYSTEM}${graph?.kind === "grammar" ? `\n\n${GRAMMAR}` : ""}\n\nLEARNING_GRAPH (scenes other than the current and next one are listed by title and words only):\n${JSON.stringify(lessonForModel)}\n\nLEARNER_STATE:\n${JSON.stringify(compactState(learnerState))}${trimmed ? "\n\nOnly the session's first message and the most recent messages are included below; LEARNER_STATE summarises the learner's progress from the rest." : ""}`,
             messages: await convertToModelMessages(history.map(markSpoken)),
             abortSignal: request.signal,
             onFinish: ({ totalUsage }) => logUsage("api/tutor", totalUsage),

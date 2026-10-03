@@ -525,7 +525,7 @@ function Tutor({ session: snapshot, source }: { session: Session; source: Source
           </div>
           <p className="mt-2 text-sm capitalize">{(state.stage || "full_context").replace("_", " ")}</p>
           <label className="mt-3 block text-xs uppercase tracking-wider text-muted-foreground" htmlFor="scene-picker">
-            Scene
+            {source.graph.kind === "grammar" ? "Rule" : "Scene"}
           </label>
           <select
             id="scene-picker"
@@ -533,11 +533,18 @@ function Tutor({ session: snapshot, source }: { session: Session; source: Source
             disabled={busy}
             onChange={(e) => {
               const scene = source.graph.scenes[Number(e.target.value)];
-              if (scene) send(`Let's switch to the scene "${scene.title}".`);
+              if (scene)
+                send(
+                  `Let's switch to the ${source.graph.kind === "grammar" ? "rule" : "scene"} "${scene.title}".`,
+                );
             }}
             className="mt-1 w-full rounded-md border bg-background px-2 py-1.5 text-sm disabled:opacity-60"
           >
-            {sceneIndex < 0 && <option value={-1}>Choose a scene…</option>}
+            {sceneIndex < 0 && (
+              <option value={-1}>
+                Choose a {source.graph.kind === "grammar" ? "rule" : "scene"}…
+              </option>
+            )}
             {source.graph.scenes.map((sc, i) => (
               <option key={i} value={i}>
                 {i + 1}. {sc.title}

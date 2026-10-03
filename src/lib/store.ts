@@ -8,8 +8,11 @@ export type Scene = {
   start_quote?: string;
   sequence: SeqItem[];
   phrases: string[];
+  exercises?: Exercise[];
 };
+export type Exercise = { prompt: string; answer: string };
 export type Graph = {
+  kind?: "content" | "grammar";
   title: string;
   topic: string;
   language: string;
@@ -260,7 +263,8 @@ export function createSession(profileId: string, sourceId: string, opener?: stri
   return s;
 }
 
-export const sceneOpener = (title: string) => `Let's practise the scene "${title}".`;
+export const sceneOpener = (title: string, grammar = false) =>
+  `Let's practise the ${grammar ? "rule" : "scene"} "${title}".`;
 
 export const reviewOpener = (items: SeqItem[]) =>
   `Let's review the words I find hard: ${items

@@ -308,6 +308,10 @@ function Index() {
           )}
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
+        <p className="mt-3 text-sm text-muted-foreground">
+          Grammar works too: paste a rule or a link to a grammar page and you'll practise it with
+          exercises.
+        </p>
       </section>
 
     </main>

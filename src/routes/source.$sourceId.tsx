@@ -65,6 +65,7 @@ function SourcePage() {
   const progress = getProgress(profile.id, sourceId);
   const summary = mastery(source, progress);
   const g = source.graph;
+  const grammar = g.kind === "grammar";
   const times = sceneStartTimes(g, source.video?.cues);
   const playScene = (seconds: number) => {
     player.current?.playFrom(seconds);
@@ -84,7 +85,7 @@ function SourcePage() {
         ← Library
       </Link>
       <p className="mt-6 text-xs uppercase tracking-widest text-accent">
-        {g.language} · {g.level} · {source.kind}
+        {g.language} · {g.level} · {grammar ? "Grammar" : source.kind}
       </p>
       <h1 className="mt-2 text-5xl">{g.title}</h1>
       <p className="mt-3 max-w-2xl text-muted-foreground">{g.summary}</p>
@@ -189,7 +190,7 @@ function SourcePage() {
           <article key={i} className="rounded-2xl border bg-card p-6 shadow-paper">
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs uppercase tracking-wider text-muted-foreground">
-                Scene {i + 1}
+                {grammar ? "Rule" : "Scene"} {i + 1}
               </p>
               {times[i] !== undefined && (
                 <button
@@ -204,13 +205,18 @@ function SourcePage() {
             </div>
             <h3 className="mt-1 text-2xl">{sc.title}</h3>
             <p className="mt-3 text-sm italic text-muted-foreground">{sc.context}</p>
+            {grammar && !!sc.exercises?.length && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {sc.exercises.length} exercises ready
+              </p>
+            )}
             <Button
               size="sm"
               variant="secondary"
               className="mt-4"
-              onClick={() => start(sceneOpener(sc.title))}
+              onClick={() => start(sceneOpener(sc.title, grammar))}
             >
-              Practise this scene
+              Practise this {grammar ? "rule" : "scene"}
             </Button>
             <ol className="mt-4 flex flex-wrap items-center gap-1.5 text-sm">
               {sc.sequence.map((it, j) => {
