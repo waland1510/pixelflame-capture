@@ -74,13 +74,104 @@ EVERY TURN:
 - Then write the next activity. Keep it short (under ~120 words). Use markdown sparingly; use "___" for blanks. End with one clear prompt for the learner.
 - Begin with a one-line tag like "**Conversation · Scene: Augen**".`;
 
-const GRAMMAR = `GRAMMAR LESSON: this LEARNING_GRAPH teaches a grammar rule. Each scene is one part of the rule; its "context" states the rule, "sequence" lists the forms to master and "exercises" holds ready-made exercises with answers. For this lesson the rules below replace the conversation and cloze rules above.
+const GRAMMAR = `GRAMMAR LESSON: this LEARNING_GRAPH teaches a grammar rule. Each scene is one part of the rule; its "context" states the rule, "sequence" lists the forms to master and "exercises" holds ready-made exercises with answers. For this lesson the rules below replace the conversation, cloze and hint rules above.
 - When a part starts, explain its rule briefly (2-3 sentences with one example from the source), then give the first exercise in the same message. Show the explanation again only when the learner asks or keeps missing the same form.
-- Every turn is one exercise. Use the scene's exercises first, in order, without showing their answers; once they are used up, write new ones in the same style. Blanks are allowed in every turn; put the cue right after the blank, e.g. "Heute ist der ___ Mai. (3.)".
-- Vary the task and raise the difficulty as the learner succeeds: fill in the form → transform a sentence → translate a short sentence → answer a question using the form → a free sentence about their own life.
-- Grade the form strictly (ending, spelling, agreement); accept any other words that fit. After a wrong answer, give the smallest useful hint (point to the rule, then the ending, then the answer) and ask again before moving on.
-- Move to the next part once the learner gets several forms of this part right without hints.
-- record_evaluation "items" are the "sequence" terms the exercise tested. Tag messages "**Exercise · Scene: <the scene's exact title>**".`;
+- Every turn is one exercise, and it tests only forms listed in the lesson's "sequence": the current part's, or an earlier part's when mixing in review. Never test a form the lesson doesn't list.
+- Follow PRACTICE_PLAN: target the forms it lists as needing practice, least practised first, and move to the next part only when it says this part is covered.
+- Use the scene's ready-made exercises first, without showing their answers and without repeating one already asked; then write new ones.
+- Vary the task, never the same kind twice in a row: fill in the blank with a cue right after it ("Heute ist der ___ Mai. (3.)"), transform a sentence (change the article, number, case or person), translate a short English sentence, answer a question using the form, fix a sentence with one mistake, build a sentence from given words, a free sentence about their own life. Vary the people, objects and situations in the sentences too.
+- Grade the form strictly (ending, spelling, agreement); accept any other words that fit, and ignore spacing and punctuation slips.
+- After a wrong answer, give the correct form and the reason in one sentence, then move on to a DIFFERENT exercise. Don't ask the missed exercise again yet: PRACTICE_PLAN says when it is due. If the learner asks for a hint or says they don't know, give the smallest useful hint and let them try again.
+- When PRACTICE_PLAN lists a review exercise, make it this turn's exercise, word for word, introduced with something like "Let's try this one again:".
+- In record_evaluation, "items" are exactly the "sequence" terms this exercise tested, never a different form that merely looks similar, and "exercise" is the exercise the learner just answered, copied word for word.
+- Tag messages "**Exercise · Scene: <the scene's exact title>**".`;
+
+const REVIEW_AFTER = 3;
+const NEEDS_PRACTICE = 3;
+
+const exerciseKey = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+
+function evaluationsIn(messages: UIMessage[]) {
+  return messages.flatMap((m) => {
+    if (m.role !== "assistant") return [];
+    const part = [...m.parts]
+      .reverse()
+      .find(
+        (p) =>
+          p.type === "tool-record_evaluation" &&
+          "input" in p &&
+          !!p.input &&
+          p.state !== "output-error",
+      );
+    const evaluation = part && "input" in part ? normaliseEvaluation(part.input) : undefined;
+    return evaluation ? [evaluation] : [];
+  });
+}
+
+/** The oldest missed exercise that has had REVIEW_AFTER other answers since and wasn't asked again. */
+function dueReview(evaluations: Evaluation[]) {
+  for (let i = 0; i < evaluations.length; i++) {
+    const { exercise, items } = evaluations[i]!;
+    const key = exerciseKey(exercise);
+    if (!key || !items.some((item) => !item.correct)) continue;
+    const askedAgain = evaluations.slice(i + 1).some((e) => exerciseKey(e.exercise) === key);
+    if (!askedAgain && evaluations.length - 1 - i >= REVIEW_AFTER) return exercise;
+  }
+  return undefined;
+}
+
+function practicePlan(
+  graph: Graph,
+  focus: number,
+  messages: UIMessage[],
+  state: LearnerState | undefined,
+) {
+  const scene = graph.scenes[focus];
+  if (!scene) return { plan: "", note: "" };
+  const needs = scene.sequence
+    .map((item) => ({ term: item.term, seen: state?.items?.[item.term]?.seen ?? 0 }))
+    .filter(
+      ({ term, seen }) =>
+        seen < NEEDS_PRACTICE || (state?.items?.[term]?.recall_strength ?? 0) < 0.6,
+    )
+    .sort((a, b) => a.seen - b.seen);
+  const review = dueReview(evaluationsIn(messages));
+  const plan = [
+    `PRACTICE_PLAN for the part "${scene.title}":`,
+    needs.length
+      ? `- Forms needing practice: ${needs.map(({ term, seen }) => `${term} (practised ${seen}x)`).join(", ")}.`
+      : "- Every form of this part is practised; move on to the next part and mix earlier forms in now and then.",
+    review
+      ? `- THIS TURN: after reacting to the learner's answer, your exercise must be this missed one, word for word, introduced with "Let's try this one again:"\n  ${review}`
+      : "- No review exercise is due; write a new exercise.",
+  ].join("\n");
+  const note = review
+    ? `after reacting to my answer, ask this missed exercise again word for word, introduced with "Let's try this one again:" — ${review}`
+    : needs[0]
+      ? `make the next exercise practise "${needs[0].term}", with a different kind of task and a different sentence than your previous exercise.`
+      : "";
+  return { plan, note };
+}
+
+/** Models follow the latest message more closely than the system prompt, so the plan's next step rides on it. */
+function withAppNote(messages: UIMessage[], note: string): UIMessage[] {
+  const last = messages.at(-1);
+  if (!note || last?.role !== "user") return messages;
+  return [
+    ...messages.slice(0, -1),
+    {
+      ...last,
+      parts: [
+        ...last.parts,
+        { type: "text", text: `[App note to the tutor, not written by the learner: ${note}]` },
+      ],
+    },
+  ];
+}
 
 // Shown to the model as-is so it fills every field.
 const evaluationSchema = z.object({
@@ -108,6 +199,11 @@ const evaluationSchema = z.object({
     .string()
     .describe(
       "If you changed anything in 'corrected': one short English sentence explaining the main fix. Otherwise an empty string.",
+    ),
+  exercise: z
+    .string()
+    .describe(
+      "Grammar lessons: the exercise the learner just answered, copied word for word from your previous message. Otherwise an empty string.",
     ),
 });
 
@@ -148,6 +244,7 @@ function normaliseEvaluation(value: unknown): Evaluation | undefined {
     note: text(v["note"]),
     corrected: text(v["corrected"]),
     correction_note: text(v["correction_note"]),
+    exercise: text(v["exercise"]),
   };
 }
 
@@ -180,15 +277,21 @@ export const Route = createFileRoute("/api/tutor")({
             learnerState: LearnerState | undefined;
           };
           const { model } = makeGateway();
-          const lessonForModel = graph?.scenes
-            ? compactGraph(graph, focusSceneIndex(graph, messages, learnerState))
-            : graph;
+          const focus = graph?.scenes ? focusSceneIndex(graph, messages, learnerState) : 0;
+          const lessonForModel = graph?.scenes ? compactGraph(graph, focus) : graph;
+          const grammar = graph?.kind === "grammar";
+          const practice = grammar
+            ? practicePlan(graph, focus, messages, learnerState)
+            : { plan: "", note: "" };
+          const plan = practice.plan ? `\n\n${practice.plan}` : "";
           const history = recentMessages(messages);
           const trimmed = history.length < messages.length;
           const result = streamText({
             model,
-            system: `${SYSTEM}${graph?.kind === "grammar" ? `\n\n${GRAMMAR}` : ""}\n\nLEARNING_GRAPH (scenes other than the current and next one are listed by title and words only):\n${JSON.stringify(lessonForModel)}\n\nLEARNER_STATE:\n${JSON.stringify(compactState(learnerState))}${trimmed ? "\n\nOnly the session's first message and the most recent messages are included below; LEARNER_STATE summarises the learner's progress from the rest." : ""}`,
-            messages: await convertToModelMessages(history.map(markSpoken)),
+            system: `${SYSTEM}${grammar ? `\n\n${GRAMMAR}` : ""}\n\nLEARNING_GRAPH (scenes other than the current and next one are listed by title and words only):\n${JSON.stringify(lessonForModel)}\n\nLEARNER_STATE:\n${JSON.stringify(compactState(learnerState))}${trimmed ? "\n\nOnly the session's first message and the most recent messages are included below; LEARNER_STATE summarises the learner's progress from the rest." : ""}${plan}`,
+            messages: await convertToModelMessages(
+              withAppNote(history.map(markSpoken), practice.note),
+            ),
             abortSignal: request.signal,
             onFinish: ({ totalUsage }) => logUsage("api/tutor", totalUsage),
             // The model sometimes writes its reply in the same step as the tool call; another step would repeat it.

@@ -38,9 +38,9 @@ For a "grammar" source, each scene is one part of the rule, in the order the sou
 - "title": a short name for that part, e.g. "1–19: add -te".
 - "context": the rule for that part in 2-4 short English sentences, with the source's own target-language examples.
 - "start_quote": "".
-- "sequence": the forms the learner must master, e.g. { "term": "der dritte", "meaning": "the third (irregular)", "emoji": "3️⃣" }.
+- "sequence": every form this part teaches, 3-10, as words the learner writes, never a grammar label like "Accusative"; "meaning" names the aspect, e.g. { "term": "der dritte", "meaning": "the third (irregular)", "emoji": "3️⃣" } or { "term": "einen", "meaning": "accusative masculine indefinite article", "emoji": "🎯" }.
 - "phrases": the source's example sentences.
-- "exercises": 4-8 exercises that make the learner apply this part of the rule, easy to hard and varied: fill in the correct form ("Heute ist der ___ Mai. (3.)"), transform, translate a short sentence into the target language, answer a question with the form. Every exercise has exactly one correct answer; "prompt" is the task as the learner sees it (instruction in English, sentence in the target language); "answer" is the full expected answer. Use only words a learner at this level knows; new example sentences are allowed here.`;
+- "exercises": 4-8 exercises that make the learner apply this part of the rule, each testing forms from its "sequence" and together covering every one of them, easy to hard and varied: fill in the correct form ("Heute ist der ___ Mai. (3.)"), transform, translate a short sentence into the target language, answer a question with the form. Every exercise has exactly one correct answer; "prompt" is the task as the learner sees it (instruction in English, sentence in the target language); "answer" is the full expected answer. Use only words a learner at this level knows; new example sentences are allowed here.`;
 
 const string = { type: "string" } as const;
 const strings = { type: "array", items: string } as const;

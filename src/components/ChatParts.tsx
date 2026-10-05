@@ -23,6 +23,7 @@ export function CorrectionCard({
 }) {
   const typedForm = (text: string) =>
     text
+      .replace(/\s+([.,!?;:…])/g, "$1")
       .trim()
       .replace(/[.!?…]+$/, "")
       .replace(/\s+/g, " ");
